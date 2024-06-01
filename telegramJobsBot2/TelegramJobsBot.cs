@@ -1,5 +1,3 @@
-using Azure.Identity;
-using Azure.Security.KeyVault.Secrets;
 using jobs_api;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
@@ -15,24 +13,21 @@ namespace telegramJobsBot2
         private string? _chatId;
         private string? _botToken;
         private string? _JobsApiUrl;
-        //private readonly IConfiguration _configuration = null!;
-        private static readonly SecretClient secretClient = new SecretClient(
-        new Uri("https://tgjobskeyvault.vault.azure.net/"), new DefaultAzureCredential());
 
         public TelegramJobsBot(ILoggerFactory loggerFactory)
         {
             _logger = loggerFactory.CreateLogger<TelegramJobsBot>();
-        }
+            _botToken = Environment.GetEnvironmentVariable("MyToken");
+            _JobsApiUrl = Environment.GetEnvironmentVariable("JobsApiUrl");
+            _chatId = Environment.GetEnvironmentVariable("chatId");
 
-        public async Task InitializeAsync()
-        {
-            var chatId = await secretClient.GetSecretAsync("chatId");
-            _chatId = chatId.Value.Value;
-            var myToken = await secretClient.GetSecretAsync("MyToken");
-            _botToken = myToken.Value.Value;
+            if (string.IsNullOrWhiteSpace(_botToken) || string.IsNullOrWhiteSpace(_JobsApiUrl) || string.IsNullOrWhiteSpace(_chatId))
+            {
+                _logger.LogError("Missing environment variables.");
+                throw new InvalidOperationException("Missing environment variables.");
+            }
+
             _botClient = new TelegramBotClient(_botToken);
-            var JobsApiUrl = await secretClient.GetSecretAsync("JobsApiUrl");
-            _JobsApiUrl = JobsApiUrl.Value.Value;
         }
 
         [Function("Function1")]
@@ -49,7 +44,6 @@ namespace telegramJobsBot2
 
         private async Task FetchAndSendJobsAsync()
         {
-            await InitializeAsync();
             using CancellationTokenSource cts = new();
             var jsonString = new FetchApi(_logger, _JobsApiUrl);
             var result = await jsonString.GetJobsAsync();
@@ -72,10 +66,10 @@ namespace telegramJobsBot2
                     var jobString = $"Link: {job.Link}, Level: {job.Lvl}, Title: {job.Title}";
                     await SendMessageAsync(jobString);
                     messageCount++;
-                    // Delay 1min  between messages after 18 messages to avoid telegram rate limit
-                    if (messageCount % 18 == 0)
+                    // Delay 1.5 min  between messages after 19 messages to avoid telegram rate limit
+                    if (messageCount % 19 == 0)
                     {
-                        await Task.Delay(60000, cts.Token);
+                        await Task.Delay(90000, cts.Token);
                     }
                 }
             }
